@@ -390,7 +390,7 @@ class _CartScreenState extends State<CartScreen> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Please login with your phone number to continue your order. This allows you to track and manage order status.',
+            'Please login with your Email to continue your order. This allows you to track and manage order status.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
