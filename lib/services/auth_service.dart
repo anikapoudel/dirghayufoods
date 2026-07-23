@@ -120,15 +120,15 @@ class AuthService {
   }
 
   static Future<http.Response> authorizedRequest(
-    Future<http.Response> Function(Map<String, String> headers) request,
-  ) async {
+      Future<http.Response> Function(Map<String, String> headers) request,
+      ) async {
     var headers = await authHeaders();
     var response = await request(headers);
     await _saveCookieFromResponse(response);
 
     final looksExpired =
         response.statusCode == 401 &&
-        response.body.toLowerCase().contains('expired');
+            response.body.toLowerCase().contains('expired');
 
     if (looksExpired) {
       final refreshed = await refreshToken();
@@ -154,11 +154,11 @@ class AuthService {
   }
 
   static Future<Map<String, dynamic>> _post(
-    String path,
-    Map<String, dynamic> body, {
-    bool withAuth = false,
-    bool captureCookie = false,
-  }) async {
+      String path,
+      Map<String, dynamic> body, {
+        bool withAuth = false,
+        bool captureCookie = false,
+      }) async {
     http.Response response;
     try {
       response = await http.post(
@@ -180,9 +180,9 @@ class AuthService {
   }
 
   static Future<Map<String, dynamic>> _get(
-    String path, {
-    bool withAuth = false,
-  }) async {
+      String path, {
+        bool withAuth = false,
+      }) async {
     http.Response response;
     try {
       response = await http.get(
@@ -199,9 +199,9 @@ class AuthService {
   }
 
   static Future<Map<String, dynamic>> _patch(
-    String path,
-    Map<String, dynamic> body,
-  ) async {
+      String path,
+      Map<String, dynamic> body,
+      ) async {
     http.Response response;
     try {
       response = await http.patch(
@@ -244,6 +244,12 @@ class AuthService {
   }) async {
     final data = await _post('/auth/verify-otp', {'email': email, 'otp': otp});
     return data['message']?.toString() ?? 'Email verified.';
+  }
+
+  static Future<String> resendOtp({required String email}) async {
+    final data = await _post('/auth/resend-otp', {'email': email});
+    return data['message']?.toString() ??
+        'A new OTP has been sent to your email. Please verify to complete registration.';
   }
 
   static Future<Customer> login({

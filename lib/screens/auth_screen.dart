@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 
@@ -22,16 +23,16 @@ class _AuthScreenState extends State<AuthScreen>
   // Login Controllers
   final TextEditingController _loginEmailController = TextEditingController();
   final TextEditingController _loginPasswordController =
-      TextEditingController();
+  TextEditingController();
 
   // Signup Controllers
   final TextEditingController _signupNameController = TextEditingController();
   final TextEditingController _signupEmailController = TextEditingController();
   final TextEditingController _signupPasswordController =
-      TextEditingController();
+  TextEditingController();
   final TextEditingController _signupPhoneController = TextEditingController();
   final TextEditingController _signupLocationController =
-      TextEditingController();
+  TextEditingController();
 
   @override
   void initState() {
@@ -276,20 +277,20 @@ class _AuthScreenState extends State<AuthScreen>
               ),
               child: _isLoginLoading
                   ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
+                height: 22,
+                width: 22,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                ),
+              )
                   : const Text(
-                      'Sign In',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                'Sign In',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ],
@@ -370,7 +371,7 @@ class _AuthScreenState extends State<AuthScreen>
                         size: 20,
                       ),
                       onPressed: () => setState(
-                        () => _obscureSignupPassword = !_obscureSignupPassword,
+                            () => _obscureSignupPassword = !_obscureSignupPassword,
                       ),
                     ),
                     border: InputBorder.none,
@@ -414,20 +415,20 @@ class _AuthScreenState extends State<AuthScreen>
               ),
               child: _isSignupLoading
                   ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
+                height: 22,
+                width: 22,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                ),
+              )
                   : const Text(
-                      'Create Account',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                'Create Account',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ],
@@ -602,24 +603,80 @@ class _OtpDialog extends StatefulWidget {
 }
 
 class _OtpDialogState extends State<_OtpDialog> {
-  final TextEditingController _otpController = TextEditingController();
-  bool _isLoading = false;
+  static const int _resendCooldownSeconds = 60;
+
+  final List<TextEditingController> _digitControllers =
+  List.generate(6, (_) => TextEditingController());
+  final List<FocusNode> _digitFocusNodes =
+  List.generate(6, (_) => FocusNode());
+
+  bool _isVerifying = false;
+  bool _isResending = false;
   String? _error;
+  String _infoMessage =
+      'OTP sent to your email. Please verify to complete registration.';
+
+  Timer? _resendTimer;
+  int _secondsRemaining = _resendCooldownSeconds;
+
+  @override
+  void initState() {
+    super.initState();
+    _startResendCountdown();
+  }
 
   @override
   void dispose() {
-    _otpController.dispose();
+    _resendTimer?.cancel();
+    for (final controller in _digitControllers) {
+      controller.dispose();
+    }
+    for (final node in _digitFocusNodes) {
+      node.dispose();
+    }
     super.dispose();
   }
 
+  String get _otp => _digitControllers.map((c) => c.text).join();
+
+  void _startResendCountdown() {
+    _resendTimer?.cancel();
+    setState(() => _secondsRemaining = _resendCooldownSeconds);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        setState(() => _secondsRemaining = 0);
+      } else {
+        setState(() => _secondsRemaining--);
+      }
+    });
+  }
+
+  void _onDigitChanged(int index, String value) {
+    if (_error != null) setState(() => _error = null);
+    if (value.isNotEmpty) {
+      if (index < _digitControllers.length - 1) {
+        _digitFocusNodes[index + 1].requestFocus();
+      } else {
+        _digitFocusNodes[index].unfocus();
+      }
+    } else if (index > 0) {
+      _digitFocusNodes[index - 1].requestFocus();
+    }
+  }
+
   Future<void> _verify() async {
-    final otp = _otpController.text.trim();
-    if (otp.isEmpty) {
-      setState(() => _error = 'Enter the OTP sent to your email');
+    final otp = _otp;
+    if (otp.length < 6) {
+      setState(() => _error = 'Enter the 6-digit OTP sent to your email');
       return;
     }
     setState(() {
-      _isLoading = true;
+      _isVerifying = true;
       _error = null;
     });
     try {
@@ -630,53 +687,322 @@ class _OtpDialogState extends State<_OtpDialog> {
     } catch (_) {
       setState(() => _error = 'Something went wrong. Please try again.');
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isVerifying = false);
     }
+  }
+
+  Future<void> _resendCode() async {
+    if (_secondsRemaining > 0 || _isResending) return;
+
+    setState(() {
+      _isResending = true;
+      _error = null;
+    });
+    try {
+      final message = await AuthService.resendOtp(email: widget.email);
+      for (final controller in _digitControllers) {
+        controller.clear();
+      }
+      if (_digitFocusNodes.isNotEmpty) {
+        _digitFocusNodes.first.requestFocus();
+      }
+      if (mounted) {
+        setState(() => _infoMessage = message);
+      }
+      _startResendCountdown();
+    } on AuthException catch (e) {
+      setState(() => _error = e.message);
+    } catch (_) {
+      setState(() => _error = 'Something went wrong. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isResending = false);
+    }
+  }
+
+  Widget _buildDigitBox(int index) {
+    return SizedBox(
+      width: 44,
+      height: 52,
+      child: TextField(
+        controller: _digitControllers[index],
+        focusNode: _digitFocusNodes[index],
+        textAlign: TextAlign.center,
+        keyboardType: TextInputType.number,
+        maxLength: 1,
+        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+        decoration: InputDecoration(
+          counterText: '',
+          contentPadding: EdgeInsets.zero,
+          filled: true,
+          fillColor: Colors.grey.shade50,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF1E5038), width: 2),
+          ),
+        ),
+        onChanged: (value) => _onDigitChanged(index, value),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Verify your email'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Enter the OTP sent to ${widget.email}'),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _otpController,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              hintText: '6-digit code',
-              border: const OutlineInputBorder(),
-              errorText: _error,
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isLoading ? null : () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _isLoading ? null : _verify,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1E5038),
-          ),
-          child: _isLoading
-              ? const SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
+    final canResend = _secondsRemaining <= 0 && !_isResending;
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 20, 12, 20),
+                decoration: BoxDecoration(
+                  color: Colors.green[900],
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
                   ),
-                )
-              : const Text('Verify', style: TextStyle(color: Colors.white)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.shield_outlined,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Secure Access Portal',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'Dirghayu Foods Member Center',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.85),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: _isVerifying
+                          ? null
+                          : () => Navigator.pop(context, false),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Info / success banner
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E5038).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border(
+                          left: BorderSide(
+                            color: const Color(0xFF1E5038),
+                            width: 4,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        _infoMessage,
+                        style: const TextStyle(
+                          color: Color(0xFF1E5038),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Verification code has been sent to your email address:',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.email,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'ENTER 6-DIGIT VERIFICATION OTP',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF4B5563),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children:
+                      List.generate(6, (i) => _buildDigitBox(i)).toList(),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _error!,
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _secondsRemaining > 0
+                              ? 'Resend code in ${_secondsRemaining}s'
+                              : 'Ready to resend',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _secondsRemaining > 0
+                                ? Colors.grey[500]
+                                : Colors.green[900],
+                          ),
+                        ),
+                        InkWell(
+                          onTap: canResend ? _resendCode : null,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_isResending)
+                                SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.green[900],
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  Icons.refresh,
+                                  size: 16,
+                                  color: canResend
+                                      ? Colors.green[900]
+                                      : Colors.grey[400],
+                                ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Resend Code',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: canResend
+                                      ? Colors.green[900]
+                                      : Colors.grey[400],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _isVerifying
+                                ? null
+                                : () => Navigator.pop(context, false),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              side: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            child: const Text(
+                              'Back',
+                              style: TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: _isVerifying ? null : _verify,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1E5038),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: _isVerifying
+                                ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                                : const Text(
+                              'Verify & Log In',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -694,7 +1020,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   final TextEditingController _otpController = TextEditingController();
   final TextEditingController _newPasswordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
-      TextEditingController();
+  TextEditingController();
   bool _isLoading = false;
   String? _error;
 
@@ -781,45 +1107,45 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: _step == 0
             ? [
-                TextField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    hintText: 'name@example.com',
-                    border: const OutlineInputBorder(),
-                    errorText: _error,
-                  ),
-                ),
-              ]
+          TextField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: InputDecoration(
+              hintText: 'name@example.com',
+              border: const OutlineInputBorder(),
+              errorText: _error,
+            ),
+          ),
+        ]
             : [
-                TextField(
-                  controller: _otpController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    hintText: '6-digit code',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _newPasswordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    hintText: 'New password',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _confirmPasswordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    hintText: 'Confirm new password',
-                    border: const OutlineInputBorder(),
-                    errorText: _error,
-                  ),
-                ),
-              ],
+          TextField(
+            controller: _otpController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              hintText: '6-digit code',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _newPasswordController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              hintText: 'New password',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _confirmPasswordController,
+            obscureText: true,
+            decoration: InputDecoration(
+              hintText: 'Confirm new password',
+              border: const OutlineInputBorder(),
+              errorText: _error,
+            ),
+          ),
+        ],
       ),
       actions: [
         TextButton(
@@ -835,17 +1161,17 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           ),
           child: _isLoading
               ? const SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
+            height: 18,
+            width: 18,
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2,
+            ),
+          )
               : Text(
-                  _step == 0 ? 'Send OTP' : 'Reset Password',
-                  style: const TextStyle(color: Colors.white),
-                ),
+            _step == 0 ? 'Send OTP' : 'Reset Password',
+            style: const TextStyle(color: Colors.white),
+          ),
         ),
       ],
     );
