@@ -299,6 +299,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _cream,
+      appBar: AppBar(
+        backgroundColor: Colors.green[900],
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Checkout',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+      ),
       body: SafeArea(
         child: Consumer<CartProvider>(
           builder: (context, cart, _) {
@@ -1082,7 +1098,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       elevation: 0,
                     ),
                     child: const Text(
-                      'Track Order Status',
+                      'Track Order',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,

@@ -38,12 +38,10 @@ class _CartScreenState extends State<CartScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // ✅ Just load the cart normally
       context.read<CartProvider>().loadCart();
     });
   }
 
-  // ✅ FIXED: Uncommented _checkAuth()
   Future<void> _checkAuth() async {
     final loggedIn = await AuthService.isLoggedIn();
     if (!mounted) return;
@@ -53,15 +51,11 @@ class _CartScreenState extends State<CartScreen> {
     });
   }
 
-  // ✅ This is the method we use
   Future<void> _loadCartWithDiscounts() async {
     final cartProvider = context.read<CartProvider>();
     await cartProvider.loadCart();
     await cartProvider.refreshCartWithDiscounts();
   }
-
-  // ❌ DELETE THIS - Not needed
-  // Future<void> _loadCartWithFreshPrices() async { ... }
 
   @override
   void dispose() {
@@ -163,16 +157,7 @@ class _CartScreenState extends State<CartScreen> {
     await _checkAuth();
     if (!mounted || !_isLoggedIn) return;
 
-    // Merges whatever was in the local guest cart into the real server
-    // cart, clears local guest storage, and switches CartProvider into
-    // server-backed mode. Same call ProfileScreen's login flow uses —
-    // one merge code path instead of two slightly different ones.
     await cartProvider.syncGuestCartToServer();
-
-    // REMOVED — no longer auto-navigate to CheckoutScreen. The user
-    // stays on CartScreen, which now correctly shows the "Proceed to
-    // Checkout" button instead of the guest alert, and can tap it
-    // themselves when ready — matching the expected flow.
   }
 
   @override
